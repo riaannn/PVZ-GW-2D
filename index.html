@@ -6,6 +6,10 @@
     <title>Unity WebGL Player | PVZ GW 2D</title>
     <link rel="shortcut icon" href="TemplateData/favicon.ico">
     <link rel="stylesheet" href="TemplateData/style.css">
+    <style>
+      /* Optional: Match the NovOS aesthetic by ensuring the background is dark during merge */
+      body { background: #0a0a0a; } 
+    </style>
   </head>
   <body>
     <div id="unity-container" class="unity-desktop">
@@ -31,12 +35,6 @@
       var fullscreenButton = document.querySelector("#unity-fullscreen-button");
       var warningBanner = document.querySelector("#unity-warning");
 
-      // Shows a temporary message banner/ribbon for a few seconds, or
-      // a permanent error message on top of the canvas if type=='error'.
-      // If type=='warning', a yellow highlight color is used.
-      // Modify or remove this function to customize the visually presented
-      // way that non-critical warnings and error messages are presented to the
-      // user.
       function unityShowBanner(msg, type) {
         function updateBannerVisibility() {
           warningBanner.style.display = warningBanner.children.length ? 'block' : 'none';
@@ -57,8 +55,10 @@
 
       var buildUrl = "Build";
       var loaderUrl = buildUrl + "/Game 0.5.8 BROWSER.loader.js";
+      
+      // Configuration template
       var config = {
-        dataUrl: buildUrl + "/Game 0.5.8 BROWSER.data.br",
+        dataUrl: "", // This will be filled by our merge function
         frameworkUrl: buildUrl + "/Game 0.5.8 BROWSER.framework.js.br",
         codeUrl: buildUrl + "/Game 0.5.8 BROWSER.wasm.br",
         streamingAssetsUrl: "StreamingAssets",
@@ -68,52 +68,65 @@
         showBanner: unityShowBanner,
       };
 
-      // By default Unity keeps WebGL canvas render target size matched with
-      // the DOM size of the canvas element (scaled by window.devicePixelRatio)
-      // Set this to false if you want to decouple this synchronization from
-      // happening inside the engine, and you would instead like to size up
-      // the canvas DOM size and WebGL render target sizes yourself.
-      // config.matchWebGLToCanvasSize = false;
-
       if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
-        // Mobile device style: fill the whole browser client area with the game canvas:
-
-        var meta = document.createElement('meta');
-        meta.name = 'viewport';
-        meta.content = 'width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes';
-        document.getElementsByTagName('head')[0].appendChild(meta);
         container.className = "unity-mobile";
         canvas.className = "unity-mobile";
-
-        // To lower canvas resolution on mobile devices to gain some
-        // performance, uncomment the following line:
-        // config.devicePixelRatio = 1;
-
         unityShowBanner('WebGL builds are not supported on mobile devices.');
       } else {
-        // Desktop style: Render the game canvas in a window that can be maximized to fullscreen:
-
         canvas.style.width = "1280px";
         canvas.style.height = "720px";
       }
 
       loadingBar.style.display = "block";
 
-      var script = document.createElement("script");
-      script.src = loaderUrl;
-      script.onload = () => {
-        createUnityInstance(canvas, config, (progress) => {
-          progressBarFull.style.width = 100 * progress + "%";
-        }).then((unityInstance) => {
-          loadingBar.style.display = "none";
-          fullscreenButton.onclick = () => {
-            unityInstance.SetFullscreen(1);
+      // --- SPLIT FILE MERGE LOGIC ---
+      async function mergeAndLaunch() {
+        const part1Url = buildUrl + "/Game 0.5.8 BROWSER.data.br.part1";
+        const part2Url = buildUrl + "/Game 0.5.8 BROWSER.data.br.part2";
+
+        try {
+          // Fetch both parts simultaneously
+          const [res1, res2] = await Promise.all([
+            fetch(part1Url),
+            fetch(part2Url)
+          ]);
+
+          if (!res1.ok || !res2.ok) throw new Error("Failed to download data parts.");
+
+          const blob1 = await res1.blob();
+          const blob2 = await res2.blob();
+
+          // Merge into a single Blob
+          const combinedBlob = new Blob([blob1, blob2], { type: "application/octet-stream" });
+          
+          // Create a local URL for the combined file
+          config.dataUrl = URL.createObjectURL(combinedBlob);
+
+          // Now load the Unity Loader script
+          var script = document.createElement("script");
+          script.src = loaderUrl;
+          script.onload = () => {
+            createUnityInstance(canvas, config, (progress) => {
+              progressBarFull.style.width = 100 * progress + "%";
+            }).then((unityInstance) => {
+              loadingBar.style.display = "none";
+              fullscreenButton.onclick = () => {
+                unityInstance.SetFullscreen(1);
+              };
+            }).catch((message) => {
+              alert(message);
+            });
           };
-        }).catch((message) => {
-          alert(message);
-        });
-      };
-      document.body.appendChild(script);
+          document.body.appendChild(script);
+
+        } catch (err) {
+          unityShowBanner("Critical error merging data files: " + err.message, "error");
+        }
+      }
+
+      // Execute the merge process
+      mergeAndLaunch();
+
     </script>
   </body>
 </html>
